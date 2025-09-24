@@ -1,34 +1,63 @@
 const cloudinary = require("../utils/cloudinaryConfig");
-const ImageSchema = require('../models/ImageSchema')
-const fs = require('fs');
+const ImageSchema = require("../models/ImageSchema");
+const fs = require("fs");
 
-const uploadFile = async(req,res,err) => {
+const uploadFile = async (req, res) => {
+  try {
+    // Check if any files are provided
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, message: "No file uploaded" });
+    }
+
+    console.log("Uploading to Cloudinary...");
+
+    // Upload all files in parallel
+    const uploadResults = await Promise.all(
+      req.files.map(async (file) => {
+        const cloudinaryUploadResponse = await cloudinary.uploader.upload(file.path, {
+          resource_type: "auto",
+        });
+
+        // Save URL to MongoDB
+        const imageDoc = new ImageSchema({ image: cloudinaryUploadResponse.secure_url });
+        await imageDoc.save();
+
+        // Delete local file
+        fs.unlinkSync(file.path);
+
+        return {
+          url: cloudinaryUploadResponse.secure_url,
+          public_id: cloudinaryUploadResponse.public_id,
+        };
+      })
+    );
+
+    console.log("All files uploaded to Cloudinary ✅");
+
+    res.status(200).json({
+      success: true,
+      message: "Images uploaded successfully",
+      files: uploadResults,
+    });
+
+  } catch (error) {
+    console.error("Upload error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to upload images",
+      error: error.message,
+    });
+  }
+};
+
+const getImage = async(req,res) =>{
     try{
-        // check if the file was provided
-        if(!req.file){
-            return res.status(400).json({message: "No file uploaded"});
-        }
-
-        console.log('Uploading to Cloudinary');
-
-        // Upload file to cloudinary
-        const cloudinaryUploadResponse = await cloudinary.uploader.upload(req.file.path, {
-            resource_type: "auto"
-        })
-
-        const imageURL = new ImageSchema({
-            image: cloudinaryUploadResponse.url
-        })
-
-        await imageURL.save();
-
-        console.log("Your file is uploaded on Cloudinary ", imageURL);
+        const image = await ImageSchema.find();
+        res.status(200).json({success:true, message:"Image fetched successfully", data:image});
     }
     catch(err){
-        console.error(err);
-        fs.unlinkSync(req.file.path);
-        return null;
+        res.status(400).json({success:false, message:err.message0});
     }
-    console.log(uploadFile, "uploadFule");
 }
-module.exports = { uploadFile };
+
+module.exports = { uploadFile, getImage };
